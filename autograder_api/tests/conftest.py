@@ -41,16 +41,22 @@ def test_user():
 
     existing_admin = db.query(User).filter(User.username == "test_admin").first()
     if existing_admin:
+        db.query(Teacher).filter(Teacher.user_id == existing_admin.user_id).delete()
+        db.query(Student).filter(Student.user_id == existing_admin.user_id).delete()
         db.delete(existing_admin)
         db.commit()
 
     existing_teacher = db.query(User).filter(User.username == "test_teacher").first()
     if existing_teacher:
+        db.query(Teacher).filter(Teacher.user_id == existing_teacher.user_id).delete()
+        db.query(Student).filter(Student.user_id == existing_teacher.user_id).delete()
         db.delete(existing_teacher)
         db.commit()
 
     existing_student = db.query(User).filter(User.username == "test_student").first()
     if existing_student:
+        db.query(Teacher).filter(Teacher.user_id == existing_student.user_id).delete()
+        db.query(Student).filter(Student.user_id == existing_student.user_id).delete()
         db.delete(existing_student)
         db.commit()
 

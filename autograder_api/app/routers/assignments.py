@@ -236,3 +236,35 @@ async def publish_assignment(
         msg="作业发布成功",
         data={"assignment_id": assignment.assignment_id}
     )
+
+
+@router.delete("/{assignment_id}", response_model=ResponseModel)
+async def delete_assignment(
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    assignment = db.query(Assignment).filter(
+        Assignment.assignment_id == assignment_id
+    ).first()
+
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="作业不存在"
+        )
+
+    if assignment.teacher_id != current_user.user_id and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权限删除此作业"
+        )
+
+    db.delete(assignment)
+    db.commit()
+
+    return ResponseModel(
+        code=200,
+        msg="作业删除成功",
+        data=None
+    )

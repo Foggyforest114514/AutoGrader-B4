@@ -36,6 +36,9 @@ class UserCreate(BaseModel):
     real_name: str
     phone: Optional[str] = None
     role: UserRole
+    student_id: Optional[str] = None
+    teacher_id: Optional[str] = None
+    department: Optional[str] = None
 
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None

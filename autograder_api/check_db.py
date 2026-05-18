@@ -8,11 +8,12 @@ conn = pymysql.connect(
     database='autograder'
 )
 cursor = conn.cursor()
-cursor.execute("SELECT username, role, email FROM users LIMIT 10")
+cursor.execute("SELECT username, role, email, password_hash FROM users LIMIT 10")
 users = cursor.fetchall()
 print("数据库中的用户列表:")
 for user in users:
     print(f"  - 用户名: {user[0]}, 角色: {user[1]}, 邮箱: {user[2]}")
+    print(f"    密码哈希: {user[3][:60]}...")
 
 cursor.execute("SELECT COUNT(*) FROM users")
 count = cursor.fetchone()[0]

@@ -29,11 +29,11 @@ if errorlevel 1 (
 
 echo.
 echo [3/3] 启动API服务...
-echo 服务地址: http://localhost:8000
-echo API文档: http://localhost:8000/docs
+echo 服务地址: http://localhost:8080
+echo API文档: http://localhost:8080/docs
 echo.
 echo 按 Ctrl+C 停止服务
 echo ========================================
 echo.
 
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
