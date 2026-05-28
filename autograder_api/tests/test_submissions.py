@@ -392,18 +392,20 @@ def test_get_my_submissions(client, student_token):
         "/api/v1/submissions/my",
         headers={"Authorization": f"Bearer {student_token}"}
     )
-    assert response.status_code == 200 or response.status_code == 404
-    if response.status_code == 200:
-        data = response.json()
-        assert data["code"] == 200
-        assert isinstance(data["data"], list)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == 200
+    assert isinstance(data["data"], list)
 
 def test_get_my_submissions_with_assignment_filter(client, student_token, test_data):
     response = client.get(
         f"/api/v1/submissions/my?assignment_id={test_data['assignment'].assignment_id}",
         headers={"Authorization": f"Bearer {student_token}"}
     )
-    assert response.status_code == 200 or response.status_code == 404
+    assert response.status_code == 200
+    data = response.json()
+    assert data["code"] == 200
+    assert isinstance(data["data"], list)
 
 def test_get_submission_statistics(client, teacher_token, test_data):
     response = client.get(

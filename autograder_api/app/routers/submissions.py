@@ -77,6 +77,40 @@ async def create_submission(
         data={"submission_id": submission_id}
     )
 
+@router.get("/my", response_model=ResponseModel)
+async def get_my_submissions(
+    assignment_id: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(Submission).filter(
+        Submission.student_user_id == current_user.user_id
+    )
+
+    if assignment_id:
+        query = query.filter(Submission.assignment_id == assignment_id)
+
+    submissions = query.order_by(Submission.submitted_at.desc()).all()
+
+    submissions_data = []
+    for submission in submissions:
+        submission_dict = {
+            "submission_id": submission.submission_id,
+            "assignment_id": submission.assignment_id,
+            "assignment_title": submission.assignment.title,
+            "question_id": submission.question_id,
+            "submitted_at": submission.submitted_at.isoformat(),
+            "status": submission.status,
+            "overall_score": submission.overall_score
+        }
+        submissions_data.append(submission_dict)
+
+    return ResponseModel(
+        code=200,
+        msg="成功",
+        data=submissions_data
+    )
+
 @router.get("/{submission_id}", response_model=ResponseModel)
 async def get_submission_detail(
     submission_id: str,
@@ -169,40 +203,6 @@ async def update_submission_result(
         code=200,
         msg="评测结果更新成功",
         data={"submission_id": submission_id}
-    )
-
-@router.get("/my", response_model=ResponseModel)
-async def get_my_submissions(
-    assignment_id: Optional[int] = Query(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    query = db.query(Submission).filter(
-        Submission.student_user_id == current_user.user_id
-    )
-
-    if assignment_id:
-        query = query.filter(Submission.assignment_id == assignment_id)
-
-    submissions = query.order_by(Submission.submitted_at.desc()).all()
-
-    submissions_data = []
-    for submission in submissions:
-        submission_dict = {
-            "submission_id": submission.submission_id,
-            "assignment_id": submission.assignment_id,
-            "assignment_title": submission.assignment.title,
-            "question_id": submission.question_id,
-            "submitted_at": submission.submitted_at.isoformat(),
-            "status": submission.status,
-            "overall_score": submission.overall_score
-        }
-        submissions_data.append(submission_dict)
-
-    return ResponseModel(
-        code=200,
-        msg="成功",
-        data=submissions_data
     )
 
 @router.get("/assignment/{assignment_id}/all", response_model=ResponseModel)
