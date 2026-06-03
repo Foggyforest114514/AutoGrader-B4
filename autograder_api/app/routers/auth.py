@@ -97,9 +97,11 @@ async def register(user_create: UserCreate, db: Session = Depends(get_db)):
             detail="管理员账号只能由系统创建"
         )
     
+    password = user_create.password
+
     new_user = User(
         username=user_create.username,
-        password_hash=get_password_hash(user_create.password),
+        password_hash=get_password_hash(password),
         email=user_create.email,
         real_name=user_create.real_name,
         phone=user_create.phone,

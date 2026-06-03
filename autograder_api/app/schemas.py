@@ -55,11 +55,12 @@ class UserInfo(BaseModel):
     role: str
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    is_active: bool = True
     student_id: Optional[str] = None
     teacher_id: Optional[str] = None
     department: Optional[str] = None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 

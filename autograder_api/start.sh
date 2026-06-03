@@ -1,22 +1,30 @@
 #!/bin/bash
 
+set -e
+
+cd "$(dirname "$0")"
+
 echo "========================================"
 echo "AutoGrader API 启动脚本"
 echo "========================================"
 echo ""
 
 echo "[1/3] 检查Python环境..."
-if ! command -v python3 &> /dev/null; then
+if [ -x ".venv/bin/python" ]; then
+    PYTHON=".venv/bin/python"
+elif command -v python3 &> /dev/null; then
+    PYTHON="python3"
+else
     echo "错误: 未找到Python，请先安装Python 3.8+"
     exit 1
 fi
-python3 --version
+"$PYTHON" --version
 
 echo ""
 echo "[2/3] 检查依赖包..."
-if ! python3 -c "import fastapi" &> /dev/null; then
+if ! "$PYTHON" -c "import fastapi, openpyxl" &> /dev/null; then
     echo "正在安装依赖包..."
-    pip3 install -r requirements.txt
+    "$PYTHON" -m pip install -r requirements.txt
     if [ $? -ne 0 ]; then
         echo "错误: 依赖包安装失败"
         exit 1
@@ -34,4 +42,4 @@ echo "按 Ctrl+C 停止服务"
 echo "========================================"
 echo ""
 
-python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+"$PYTHON" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
