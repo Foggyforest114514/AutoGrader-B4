@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -11,11 +11,13 @@ router = APIRouter(prefix="/api/v1/classes", tags=["班级管理"])
 @router.get("", response_model=ResponseModel)
 async def get_classes_list(
     course_id: int = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(Class)
-    
+
     if current_user.role == "teacher":
         query = query.filter(Class.teacher_id == current_user.user_id)
     elif current_user.role == "student":
@@ -24,12 +26,13 @@ async def get_classes_list(
         ).all()
         class_ids = [cls.class_id for cls in student_classes]
         query = query.filter(Class.class_id.in_(class_ids))
-    
+
     if course_id:
         query = query.filter(Class.course_id == course_id)
-    
-    classes = query.all()
-    
+
+    total = query.count()
+    classes = query.order_by(Class.created_at.desc()).offset((page - 1) * size).limit(size).all()
+
     classes_data = []
     for cls in classes:
         class_dict = {
@@ -43,11 +46,16 @@ async def get_classes_list(
             "created_at": cls.created_at.isoformat()
         }
         classes_data.append(class_dict)
-    
+
     return ResponseModel(
         code=200,
         msg="成功",
-        data=classes_data
+        data={
+            "total": total,
+            "page": page,
+            "size": size,
+            "classes": classes_data
+        }
     )
 
 @router.post("", response_model=ResponseModel)

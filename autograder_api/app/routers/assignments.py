@@ -13,11 +13,13 @@ router = APIRouter(prefix="/api/v1/assignments", tags=["作业管理"])
 async def get_assignments_list(
     class_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     query = db.query(Assignment)
-    
+
     if current_user.role == "teacher":
         query = query.filter(Assignment.teacher_id == current_user.user_id)
     elif current_user.role == "student":
@@ -29,12 +31,13 @@ async def get_assignments_list(
             Assignment.class_id.in_(class_ids),
             Assignment.is_published == True
         )
-    
+
     if class_id:
         query = query.filter(Assignment.class_id == class_id)
-    
-    assignments = query.all()
-    
+
+    total = query.count()
+    assignments = query.order_by(Assignment.created_at.desc()).offset((page - 1) * size).limit(size).all()
+
     assignments_data = []
     for assignment in assignments:
         assignment_dict = {
@@ -52,11 +55,16 @@ async def get_assignments_list(
             "created_at": assignment.created_at.isoformat()
         }
         assignments_data.append(assignment_dict)
-    
+
     return ResponseModel(
         code=200,
         msg="成功",
-        data=assignments_data
+        data={
+            "total": total,
+            "page": page,
+            "size": size,
+            "assignments": assignments_data
+        }
     )
 
 @router.post("", response_model=ResponseModel)

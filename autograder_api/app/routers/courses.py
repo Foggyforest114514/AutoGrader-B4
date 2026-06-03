@@ -12,6 +12,8 @@ router = APIRouter(prefix="/api/v1/courses", tags=["课程管理"])
 async def get_courses_list(
     teacher_id: Optional[int] = Query(None),
     semester: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -33,9 +35,10 @@ async def get_courses_list(
     
     if semester:
         query = query.filter(Course.semester == semester)
-    
-    courses = query.all()
-    
+
+    total = query.count()
+    courses = query.order_by(Course.created_at.desc()).offset((page - 1) * size).limit(size).all()
+
     courses_data = []
     for course in courses:
         course_dict = {
@@ -49,11 +52,16 @@ async def get_courses_list(
             "created_at": course.created_at.isoformat()
         }
         courses_data.append(course_dict)
-    
+
     return ResponseModel(
         code=200,
         msg="成功",
-        data=courses_data
+        data={
+            "total": total,
+            "page": page,
+            "size": size,
+            "courses": courses_data
+        }
     )
 
 @router.post("", response_model=ResponseModel)

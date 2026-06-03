@@ -15,9 +15,7 @@ class Difficulty(str, Enum):
 
 class Language(str, Enum):
     PYTHON = "python"
-    JAVA = "java"
-    C = "c"
-    CPP = "cpp"
+    SHELL = "shell"
 
 class TestCaseBase(BaseModel):
     input: str

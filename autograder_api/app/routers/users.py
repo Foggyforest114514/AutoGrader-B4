@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.database import get_db
-from app.models.models import User, Student, Teacher
+from app.models.models import User, Student, Teacher, Course, Class, ClassStudent, Assignment, Submission, Question, Announcement, SystemLog
 from app.schemas import (
     UserInfo, UserUpdate, TeacherCreate, ResponseModel
 )
@@ -178,6 +178,63 @@ async def create_teacher(
         msg="教师账号创建成功",
         data={"user_id": new_user.user_id, "teacher_id": teacher_data.teacher_id}
     )
+
+@router.delete("/{user_id}", response_model=ResponseModel)
+async def delete_user(
+    user_id: int,
+    current_user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db)
+):
+    if current_user.user_id == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能删除自己的账号"
+        )
+
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+
+    if user.role == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="不能删除管理员账号"
+        )
+
+    if user.role == "student":
+        db.query(Submission).filter(Submission.student_user_id == user_id).delete()
+        db.query(ClassStudent).filter(ClassStudent.student_user_id == user_id).delete()
+        db.query(Student).filter(Student.user_id == user_id).delete()
+    elif user.role == "teacher":
+        assignments = db.query(Assignment).filter(Assignment.teacher_id == user_id).all()
+        for a in assignments:
+            db.query(Submission).filter(Submission.assignment_id == a.assignment_id).delete()
+        db.query(Assignment).filter(Assignment.teacher_id == user_id).delete()
+
+        classes = db.query(Class).filter(Class.teacher_id == user_id).all()
+        for c in classes:
+            db.query(ClassStudent).filter(ClassStudent.class_id == c.class_id).delete()
+        db.query(Class).filter(Class.teacher_id == user_id).delete()
+
+        db.query(Course).filter(Course.teacher_id == user_id).delete()
+        db.query(Teacher).filter(Teacher.user_id == user_id).delete()
+
+    db.query(Question).filter(Question.created_by == user_id).update({Question.created_by: None})
+    db.query(Announcement).filter(Announcement.created_by == user_id).update({Announcement.created_by: None})
+    db.query(SystemLog).filter(SystemLog.user_id == user_id).update({SystemLog.user_id: None})
+
+    db.delete(user)
+    db.commit()
+
+    return ResponseModel(
+        code=200,
+        msg="账号已删除",
+        data=None
+    )
+
 
 @router.post("/{user_id}/deactivate", response_model=ResponseModel)
 async def deactivate_user(

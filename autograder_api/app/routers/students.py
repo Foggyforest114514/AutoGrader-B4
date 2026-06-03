@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Optional, List, Callable
 from datetime import datetime
 import uuid
 import csv
 import io
+import openpyxl
 from app.database import get_db
 from app.models.models import User, Course, Class, ClassStudent, Student
 from app.schemas import ResponseModel
@@ -38,91 +39,108 @@ async def import_students(
     fail_reasons = []
     imported_students = []
 
+    def process_row(row: dict, row_num: int) -> bool:
+        nonlocal success_count, fail_count, imported_students
+
+        student_id = row.get('student_id', '').strip()
+        username = row.get('username', student_id).strip() or student_id
+        real_name = row.get('real_name', '').strip()
+        email = row.get('email', '').strip()
+        initial_password = row.get('password', 'Pass123456').strip()
+
+        if not student_id or not real_name or not email:
+            fail_count += 1
+            fail_reasons.append(f"第{row_num}行: 缺少必填字段")
+            return False
+
+        existing_student = db.query(Student).filter(
+            Student.student_id == student_id
+        ).first()
+
+        if existing_student:
+            fail_count += 1
+            fail_reasons.append(f"第{row_num}行: 学号{student_id}已存在")
+            return False
+
+        existing_user = db.query(User).filter(
+            (User.username == username) | (User.email == email)
+        ).first()
+
+        if existing_user:
+            fail_count += 1
+            fail_reasons.append(f"第{row_num}行: 用户名或邮箱已存在")
+            return False
+
+        new_user = User(
+            username=username,
+            password_hash=get_password_hash(initial_password),
+            email=email,
+            real_name=real_name,
+            role="student",
+            is_active=True
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        new_student = Student(
+            user_id=new_user.user_id,
+            student_id=student_id,
+            first_password_changed=False
+        )
+        db.add(new_student)
+        db.commit()
+
+        if class_id:
+            existing_class = db.query(Class).filter(
+                Class.class_id == class_id
+            ).first()
+
+            if existing_class:
+                if not (current_user.role == "teacher" and existing_class.teacher_id != current_user.user_id):
+                    class_student = ClassStudent(
+                        class_id=class_id,
+                        student_user_id=new_user.user_id
+                    )
+                    db.add(class_student)
+                    db.commit()
+
+        success_count += 1
+        imported_students.append({
+            "student_id": student_id,
+            "real_name": real_name,
+            "user_id": new_user.user_id
+        })
+        return True
+
     try:
         if file.filename.endswith('.csv'):
             decoded_content = content.decode('utf-8')
             reader = csv.DictReader(io.StringIO(decoded_content))
-
             for row_num, row in enumerate(reader, start=2):
                 try:
-                    student_id = row.get('student_id', '').strip()
-                    real_name = row.get('real_name', '').strip()
-                    email = row.get('email', '').strip()
-                    initial_password = row.get('password', student_id + '123456').strip()
-
-                    if not student_id or not real_name or not email:
-                        fail_count += 1
-                        fail_reasons.append(f"第{row_num}行: 缺少必填字段")
-                        continue
-
-                    existing_student = db.query(Student).filter(
-                        Student.student_id == student_id
-                    ).first()
-
-                    if existing_student:
-                        fail_count += 1
-                        fail_reasons.append(f"第{row_num}行: 学号{student_id}已存在")
-                        continue
-
-                    existing_user = db.query(User).filter(
-                        (User.username == student_id) | (User.email == email)
-                    ).first()
-
-                    if existing_user:
-                        fail_count += 1
-                        fail_reasons.append(f"第{row_num}行: 用户名或邮箱已存在")
-                        continue
-
-                    new_user = User(
-                        username=student_id,
-                        password_hash=get_password_hash(initial_password),
-                        email=email,
-                        real_name=real_name,
-                        role="student",
-                        is_active=True
-                    )
-                    db.add(new_user)
-                    db.commit()
-                    db.refresh(new_user)
-
-                    new_student = Student(
-                        user_id=new_user.user_id,
-                        student_id=student_id,
-                        first_password_changed=False
-                    )
-                    db.add(new_student)
-                    db.commit()
-
-                    if class_id:
-                        existing_class = db.query(Class).filter(
-                            Class.class_id == class_id
-                        ).first()
-
-                        if existing_class:
-                            if current_user.role == "teacher" and existing_class.teacher_id != current_user.user_id:
-                                pass
-                            else:
-                                class_student = ClassStudent(
-                                    class_id=class_id,
-                                    student_user_id=new_user.user_id
-                                )
-                                db.add(class_student)
-                                db.commit()
-
-                    success_count += 1
-                    imported_students.append({
-                        "student_id": student_id,
-                        "real_name": real_name,
-                        "user_id": new_user.user_id
-                    })
-
+                    process_row(row, row_num)
                 except Exception as e:
                     fail_count += 1
                     fail_reasons.append(f"第{row_num}行: {str(e)}")
 
         else:
-            fail_count = 1
-            fail_reasons.append("Excel文件暂未支持，请使用CSV格式")
+            # xlsx / xls
+            wb = openpyxl.load_workbook(io.BytesIO(content))
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+            if len(rows) < 2:
+                fail_count = 0
+                fail_reasons.append("文件无数据行")
+            else:
+                headers = [str(h).strip().lower() if h else '' for h in rows[0]]
+                for row_num, row_values in enumerate(rows[1:], start=2):
+                    try:
+                        row = {headers[i]: str(v).strip() if v is not None else '' for i, v in enumerate(row_values) if i < len(headers)}
+                        process_row(row, row_num)
+                    except Exception as e:
+                        fail_count += 1
+                        fail_reasons.append(f"第{row_num}行: {str(e)}")
 
     except UnicodeDecodeError:
         raise HTTPException(
@@ -196,8 +214,10 @@ async def get_students_list(
         students_data.append({
             "user_id": user.user_id,
             "student_id": student.student_id,
+            "username": user.username,
             "real_name": user.real_name,
             "email": user.email,
+            "phone": user.phone,
             "is_active": user.is_active,
             "first_password_changed": student.first_password_changed,
             "classes": classes_info,

@@ -20,6 +20,8 @@ async def get_questions_list(
     difficulty: Optional[str] = Query(None),
     language: Optional[str] = Query(None),
     keyword: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -30,31 +32,38 @@ async def get_questions_list(
 
     if type:
         query = query.filter(Question.type == type)
-    
+
     if difficulty:
         query = query.filter(Question.difficulty == difficulty)
-    
+
     if language:
         query = query.filter(Question.language == language)
-    
+
     if keyword:
         query = query.filter(Question.title.ilike(f"%{keyword}%"))
 
-    questions = query.all()
+    total = query.count()
+    questions = query.order_by(Question.created_at.desc()).offset((page - 1) * size).limit(size).all()
+
+    # 批量获取测试用例计数，避免 N+1
+    question_ids = [q.question_id for q in questions]
+    tc_counts = {}
+    if question_ids:
+        from sqlalchemy import func as sa_func
+        rows = db.query(TestCase.question_id, sa_func.count(TestCase.test_case_id)).filter(
+            TestCase.question_id.in_(question_ids)
+        ).group_by(TestCase.question_id).all()
+        tc_counts = {row[0]: row[1] for row in rows}
 
     questions_data = []
     for question in questions:
-        test_cases_count = db.query(TestCase).filter(
-            TestCase.question_id == question.question_id
-        ).count()
-        
         questions_data.append({
             "question_id": question.question_id,
             "title": question.title,
             "type": question.type.value,
             "difficulty": question.difficulty.value,
             "language": question.language,
-            "test_cases_count": test_cases_count,
+            "test_cases_count": tc_counts.get(question.question_id, 0),
             "is_active": question.is_active,
             "created_at": question.created_at.isoformat()
         })
@@ -62,7 +71,12 @@ async def get_questions_list(
     return ResponseModel(
         code=200,
         msg="成功",
-        data=questions_data
+        data={
+            "total": total,
+            "page": page,
+            "size": size,
+            "questions": questions_data
+        }
     )
 
 

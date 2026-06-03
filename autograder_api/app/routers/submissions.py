@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from datetime import datetime
 import uuid
 from app.database import get_db
-from app.models.models import User, Submission, Assignment, ClassStudent
+from app.models.models import User, Submission, Assignment, ClassStudent, Student
 from app.schemas import SubmissionCreate, SubmissionResultUpdate, ResponseModel
 from app.auth import get_current_user
 
@@ -83,7 +83,9 @@ async def get_my_submissions(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    query = db.query(Submission).filter(
+    query = db.query(Submission).options(
+        joinedload(Submission.assignment)
+    ).filter(
         Submission.student_user_id == current_user.user_id
     )
 
@@ -101,7 +103,9 @@ async def get_my_submissions(
             "question_id": submission.question_id,
             "submitted_at": submission.submitted_at.isoformat(),
             "status": submission.status,
-            "overall_score": submission.overall_score
+            "overall_score": submission.overall_score,
+            "passed_count": submission.passed_count,
+            "total_count": submission.total_count
         }
         submissions_data.append(submission_dict)
 
@@ -117,7 +121,10 @@ async def get_submission_detail(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    submission = db.query(Submission).filter(
+    submission = db.query(Submission).options(
+        joinedload(Submission.assignment),
+        joinedload(Submission.student)
+    ).filter(
         Submission.submission_id == submission_id
     ).first()
     
@@ -227,9 +234,18 @@ async def get_assignment_all_submissions(
             detail="无权限查看此作业的提交"
         )
 
-    submissions = db.query(Submission).filter(
+    submissions = db.query(Submission).options(
+        joinedload(Submission.student)
+    ).filter(
         Submission.assignment_id == assignment_id
     ).order_by(Submission.submitted_at.desc()).all()
+
+    # 批量获取学号映射，避免 N+1
+    student_user_ids = list(set(s.student_user_id for s in submissions))
+    student_id_map = {}
+    if student_user_ids:
+        student_records = db.query(Student).filter(Student.user_id.in_(student_user_ids)).all()
+        student_id_map = {s.user_id: s.student_id for s in student_records}
 
     submissions_data = []
     for submission in submissions:
@@ -237,6 +253,7 @@ async def get_assignment_all_submissions(
             "submission_id": submission.submission_id,
             "student_user_id": submission.student_user_id,
             "student_name": submission.student.real_name,
+            "student_id": student_id_map.get(submission.student_user_id, ''),
             "question_id": submission.question_id,
             "submitted_at": submission.submitted_at.isoformat(),
             "status": submission.status,
@@ -337,6 +354,10 @@ async def get_assignment_submission_statistics(
         ClassStudent.class_id == assignment.class_id
     ).count()
 
+    # 去重：按提交学生学号计算，避免同一学生多次提交导致提交率超过100%
+    submitted_student_ids = set(s.student_user_id for s in submissions)
+    submitted_student_count = len(submitted_student_ids)
+
     scores = [s.overall_score for s in submissions if s.overall_score is not None]
     average_score = sum(scores) / len(scores) if scores else 0
     max_score = max(scores) if scores else 0
@@ -353,7 +374,7 @@ async def get_assignment_submission_statistics(
             "assignment_title": assignment.title,
             "total_students": total_students,
             "total_submissions": total_submissions,
-            "submission_rate": (total_submissions / total_students * 100) if total_students > 0 else 0,
+            "submission_rate": (submitted_student_count / total_students * 100) if total_students > 0 else 0,
             "average_score": round(average_score, 2),
             "max_score": max_score,
             "min_score": min_score,
